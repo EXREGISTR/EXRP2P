@@ -8,7 +8,7 @@ using Application.Services;
 
 namespace Infrastructure;
 
-public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) 
+internal sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) 
     : DbContext(options), IUnitOfWork {
     public DbSet<Order> Orders { get; init; }
     public DbSet<User> Users { get; init; }

@@ -1,4 +1,5 @@
 ﻿using API.Utils;
+using Application.Deals;
 using Application.Old.Requests;
 using Application.Orders.ConfirmPayments;
 using Application.Orders.Requests;
@@ -24,79 +25,8 @@ public static class OrdersEndpoints {
         group.MapPost("/reserve-buying", ReserveBuying);
 
         group.MapPost("/reserve-selling", ReserveSelling);
-
-        group.MapPost("/finish-deal", FinishDeal);
     }
 
-    public static async Task<IResult> LoadPaymentProofUrl(
-        [FromBody] LoadPaymentProofRequest request, 
-        ApplicationDbContext appDbContext,
-        UserContextAccessor userContext,
-        CancellationToken token) {
-        var senderId = userContext.Id;
-
-        var deal = await appDbContext.Deals.FirstOrDefaultAsync(x => x.Id == request.OrderId, token);
-
-        if (deal == null || deal.BuyerId != senderId) {
-            return Results.NotFound("You have not booked a purchase order");
-        }
-
-        deal.LoadPaymentProofUrl(request.PaymentProofUrl);
-
-        await appDbContext.SaveChangesAsync(token);
-
-        return Results.Accepted();
-    }
-
-    public static async Task<IResult> FinishDeal(
-        [FromBody] ConfirmPaymentRequest request,
-        ApplicationDbContext appDbContext,
-        UserContextAccessor userContext,
-        IDateTimeProvider timeProvider,
-        CancellationToken token) {
-        var senderId = userContext.Id;
-
-        var order = await appDbContext.Orders.FirstOrDefaultAsync(x => x.Id == request.OrderId, token);
-
-        if (order == null) return Results.NotFound("Order not found");
-
-        var deal = await appDbContext.Deals.FirstOrDefaultAsync(x => x.Id == request.OrderId, token);
-
-        if (deal == null) {
-            return Results.NotFound("You didn't make a deal");
-        }
-
-        if (deal.SellerId != senderId) {
-            return Results.Conflict("You aren't seller");
-        }
-
-        var sellerWallet = await appDbContext.Wallets
-            .Where(x => x.UserId == deal.SellerId && x.CurrencyId == order.FromCurrencyId)
-            .FirstAsync(token);
-
-        sellerWallet.Remove(order.Amount);
-
-        var buyerWallet = await appDbContext.Wallets
-            .Where(x => x.UserId == deal.BuyerId && x.CurrencyId == order.TargetCurrencyId)
-            .FirstOrDefaultAsync(token);
-
-        if (buyerWallet == null) {
-            buyerWallet = new Wallet(
-                userId: deal.BuyerId,
-                currencyId: order.TargetCurrencyId,
-                initialBalance: order.Amount * order.Price);
-            appDbContext.Wallets.Add(buyerWallet);
-        } else {
-            buyerWallet.Add(order.Amount * order.Price);
-        }
-
-        deal.Close(timeProvider);
-        order.ConfirmPayment();
-
-        await appDbContext.SaveChangesAsync(token);
-
-        return Results.Accepted();
-    }
 
     private static async Task<IResult> ReserveBuying() {
         // create deal
